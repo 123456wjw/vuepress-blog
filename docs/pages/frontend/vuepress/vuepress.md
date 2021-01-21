@@ -1,7 +1,7 @@
 <!--
  * @Author: wjw
  * @Date: 2021-01-21 10:24:51
- * @LastEditTime: 2021-01-21 16:59:12
+ * @LastEditTime: 2021-01-21 17:21:53
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: \react-punkd:\work\vuepress-blog\docs\pages\frontend\vuepress\vuepress.md
@@ -190,35 +190,6 @@ npm run dev即可启动项目
  没有git环境的需要先安装git环境，否则无法进行部署。
 
 :::
-
-### 创建.gitignore文件
-
-进到vuepress-blog根目录，创建deploy.sh文件
-
-```text
-.DS_Store
-node_modules
-/dist
-
-# local env files
-.env.local
-.env.*.local
-
-# Log files
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Editor directories and files
-.idea
-.vscode
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw*
-
-```
 
 ### 创建deploy.sh自动部署文件
 

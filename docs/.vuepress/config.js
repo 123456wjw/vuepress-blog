@@ -1,7 +1,7 @@
 /*
  * @Author: wjw
  * @Date: 2021-01-19 09:58:19
- * @LastEditTime: 2021-01-21 16:13:51
+ * @LastEditTime: 2021-01-22 09:16:58
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: \react-punkd:\work\testproject\docs\.vuepress\config.js
@@ -31,7 +31,7 @@ module.exports = {
           //点击标签会跳转至link的markdown文件生成的页面
           { text: "js", link: "/pages/frontend/js/replace" },
           { text: "css", link: "/pages/frontend/css/white-spaceAndword-break" },
-          { text: "vuepress", link: "/pages/frontend/vueperss/vuepress" },
+          { text: "vuepress", link: "/pages/frontend/vuepress/vuepress" },
         ],
       },
       {

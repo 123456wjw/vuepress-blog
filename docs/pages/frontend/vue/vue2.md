@@ -1,11 +1,279 @@
 <!--
  * @Author: wjw
  * @Date: 2021-01-19 15:02:23
- * @LastEditTime: 2021-01-21 14:34:28
+ * @LastEditTime: 2021-02-22 13:55:56
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: \react-punkd:\work\myblog\docs\pages\frontend\vue\vue2.md
 -->
+
+## 响应式原理
+
+### 什么是响应式
+
+从前端的角度可以简单的理解为：当数据发生变化时，页面的DOM也随之发生改变，并且整个数据模型在js中就是一个对象。也就是当你通过js改变数据模型中的数据时，对应的引用该数据的dom也会发生改变。
+
+### Object.defineProperty
+
+要想理解vue的响应式原理，我们首先得了解[Object.defineproperty](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Object/defineProperty)这个方法，下面结合一个问题来简单介绍一下这个方法的用法以及作用：
+首先我们思考一下如何实现当我们改变一个js对象的时候，让对应的dom发生改变？首先看一下vue的常见结构。
+
+```html
+var app = new Vue({
+  el: '#app',
+  data: {
+    count: 0
+  },
+  methods: {
+    addCount() {
+      this.count++
+    }
+  }
+})
+
+<div id='app'>
+  {{count}}<button @click='addCount'>点我count自增</button>  
+</div>
+```
+
+那不通过vue如何实现呢，看一下下面的代码
+
+```js
+  // 定义数据模型
+  let data = {
+    count: 0
+  }
+  var count = data.count
+  // 获取dom元素
+  const btn = document.querySelector('.btn')
+  const input = document.querySelector('.inp')
+  // 绑定事件修改数据
+  btn.addEventListener('click', function() {
+    data.count++
+  })
+  // 对数据模型进行劫持
+  Object.defineProperty(data, 'count', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      return count
+    },
+    set() {
+      count++
+      // 当监测到数据被修改时，改变dom元素
+      input.value = count
+    }
+  })
+  <div>
+    <input class='inp' />
+    <button class='btn'>点我count自增</button>
+  </div>
+```
+
+具体案例请移步[Object.defineProperty劫持数据并双向绑定](https://codepen.io/wujiawei/pen/rNWeXgP)，Object.defineProperty第一个参数是被劫持的对象，第二个参数是需要劫持的属性,第三个参数是一个对象，本例中主要运用到了get和set。当我们在事件回调中执行`data.count++`时就会触发`set`方法，在set方法中就可以执行一些需要的操作。
+对比两个案例就可以发现区别就是vue的数据劫持以及dom操作都是内部完成的，而我们的方法是自己手动修改的。看完这个案例之后，我们就来结合代码详细分析一下vue响应式原理。
+
+### vue响应式原理
+
+首先看一下官网的解释：
+
+当你把一个普通的 JavaScript 对象传入 Vue 实例作为 data 选项，Vue 将遍历此对象所有的 property，并使用 Object.defineProperty 把这些 property 全部转为 getter/setter。Object.defineProperty 是 ES5 中一个无法 shim 的特性，这也就是 Vue 不支持 IE8 以及更低版本浏览器的原因。
+
+这些 getter/setter 对用户来说是不可见的，但是在内部它们让 Vue 能够追踪依赖，在 property 被访问和修改时通知变更。这里需要注意的是不同浏览器在控制台打印数据对象时对 getter/setter 的格式化并不同，所以建议安装 vue-devtools 来获取对检查数据更加友好的用户界面。
+
+每个组件实例都对应一个 watcher 实例，它会在组件渲染的过程中把“接触”过的数据 property 记录为依赖。之后当依赖项的 setter 触发时，会通知 watcher，从而使它关联的组件重新渲染。
+![avatar](https://user-gold-cdn.xitu.io/2018/2/8/1617554b425a3431?imageView2/0/w/1280/h/960/format/webp/ignore-error/1)
+
+将上图分为三个阶段：
+
+```text
+1.初始化init阶段：主要用来初始化实例并劫持数据
+
+2.解析dom，mount阶段：主要用来解析试图，并收集对应依赖，添加订阅者watcher
+
+3.更新re-render阶段：当数据发生改变，通过watcher改变试图
+```
+
+下面我们结合代码来看：
+
+```html
+  <div id="app">
+    <h2>数据的双向绑定</h2>
+    <span v-text="name"></span>
+    <input type="text" v-model="name" >
+  </div>
+```
+
+```js
+  // 先定义一个简单的vue类
+  class EasyVue {
+    constructor(options) {
+      // options为初始化实例时传入的参数对象
+      this.$options = options
+      this.$data = options.data
+      this.$el = options.el
+      // 初始化依赖收集器 具体作用下面再讲
+      this.$deps = {}
+      // 1阶段：劫持数据（这里主要对data进行劫持，计算属性和观察属性暂不做处理）
+      this.observe(this.$data)
+      // 2阶段：解析dom，根据视图将订阅者wather添加到对应依赖中
+      this.compile(this.$el)
+    }
+    // 1阶段
+    observe(data) {
+      let val
+      // 遍历劫持
+      for(var key in data) {
+        // 收集data中的每个属性为依赖，并且初始化
+        this.$deps[key] = []
+        // 获取属性值
+        val = data[key]
+        // 递归劫持 这里只做了简单判断
+        if(typeof val === 'object') {
+          this.observe(val)
+        }
+        const deps = this.$deps[key]
+        Object.defineProperty(data, key, {
+          configurable: true,
+          enumerable: true,
+          get() {
+            // 访问该属性的时候返回对应属性值
+            return val
+          }
+          set(newVal) {
+            if(val !== newVal) {
+              // 重新赋值，
+              val = newVal
+              // 数据变化后，遍历依赖收集器，通知对应订阅者watcher更新视图
+              // 至于watcher是什么，下面再讲
+              deps.forEach(watcher => {
+                watcher.update()
+              })
+            }
+          }
+        })
+      }
+    }
+
+    // 2阶段
+    compile(el) {
+      // 获取对应dom节点
+      const node = document.querySelector(el)
+      // node.children不是真正的数组，需要转换
+      const children = Array.from(node.children)
+      // 遍历子节点
+      children.foEach(childNode => {
+        // 递归解析dom
+        if(childNode.children.length) {
+          this.compile(childNode.children)
+        }
+        // 解析具有v-text指令的dom
+        if(childNode.hasAttribute('v-text')) {
+          // 获取属性值（这个属性值是data上的某一给属性，也就是需要收集的依赖）
+          const key = childNode.getAttribute('v-text')
+          // 给对应依赖添加对应的订阅者watcher
+          this.$deps[key].push(new Watcher(this, childNode, 'innerHTML', key))
+        }
+        // 解析具有v-model指令并且是input框的dom
+        if(childNode.hasAttribute('v-model') && childNode.tagName === 'INPUT') {
+          const key = childNode.getAttribute('v-model')
+          this.$deps[key].push(new Watcher(this, childNode, 'value', key))
+          // v-model为vue的语法糖，手动绑定事件
+          childNode.addEventListener('input',() => {
+            // 修改data中的数据 会触发被劫持属性的set方法
+            this.$data[key] = childNode.value
+          })
+        }
+      })
+    }
+  }
+
+  class Watcher {
+    constructor(vm, el, attr, key) {
+      // vue组件实例
+      this.vm = vm
+      // dom元素
+      this.el = el
+      // dom元素属性
+      this.attr = attr
+      // data中的某一数据
+      this.key = key
+      // 初始化
+      this.updata()
+    }
+    update() {
+      this.el[this.attr] = this.vm.$data[this.key]
+    }
+  }
+
+  // 创建组件实例
+  const vue = new EasyVue({
+    el: '#app',
+    data: {
+      name: '张三'
+    }
+  })
+```
+
+通过上面的代码我们可以看出，首先在observe中劫持data中的所有数据，转化为get以及set，这样可以在数据改变时进行视图的更新，并且通过dep将每一个数据作为依赖收集起来；然后通过解析器解析dom上的指令，进行事件绑定并且为每一个依赖添加对应的watcher订阅者；最后当数据改变时，触发了set方法，然后dep中对应的依赖通知watcher进行视图的改变，这就是vue响应式的原理。
+具体的案例请移步[vue响应式原理](https://codepen.io/wujiawei/pen/RwGXBZQ?editors=1111)。
+
+下面是对响应式的一些补充，对数组的操作以及添加新属性的方法：
+
+```js
+  const arrayPrototype = Array.prototype
+  const newPrototype = Object.create(arrayPrototype)
+  const methods = ['push','pop','shift','unshift','splice','sort','reverse']
+  methods.forEach(method => {
+    Object.defineProperty(newPrototype, method, {
+      configurable: true,
+      enumerable: true,
+      value() {
+        console.log('监听到了数组变化')
+        return arrayPrototype[method].apply(this, arguments)
+      }
+    })
+  });
+  function defineProperty(obj, key, val) {
+    Object.defineProperty(obj, key, {
+      enumerable: true,
+      configurable: true,
+      get() {
+        return val
+      },
+      set(newVal) {
+        if(newVal === val) {
+          return
+        }
+        val = newVal
+        observer(val)
+      }
+    })
+  }
+  function observer(obj) {
+    if(typeof obj !== 'object' || obj === null) { // 如果监听的值不是对象直接返回
+      return
+    }
+    if(Object.prototype.toString.call(obj) === "[object Array]") {
+      obj.__proto__ = newPrototype
+    }
+    for(var key in obj) { // 循环监听对象的每一个属性
+      if(typeof obj[key] === 'object') {
+        observer(obj[key])
+      }
+      defineProperty(obj, key, obj[key])
+    }
+  }
+  // 为obj设置新的属性时，创建新的监听  对标vue this.$set方法
+  function set(obj, key, val) {
+    defineProperty(obj, key, val)
+  }
+  const obj = {name: 'xh', bro: {name: 'xz'}}
+  observer(obj)
+
+```
+
+通过以上的分析，应该可以初步理解vue的响应式原理了，更加具体的可以看vue的源码。
 
 ## 计算属性computed
 
